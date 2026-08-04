@@ -17,6 +17,13 @@ use alloc::sync::Arc;
 async fn fuzz_send_receive_spdm_measurement(fuzzdata: Arc<Vec<u8>>) {
     spdmlib::crypto::asym_verify::register(FAKE_ASYM_VERIFY.clone());
     spdmlib::crypto::pqc_asym_verify::register(FAKE_PQC_ASYM_VERIFY.clone());
+    // Same gap as measurement_rsp: the measurement + psk providers are registered ONLY in main()
+    // below, which is #[cfg(not(feature = "use_libfuzzer"))] and therefore compiled out of the
+    // libFuzzer build. Without them the requester walks the measurement exchange with unregistered
+    // secret providers and panics on the first input (including libFuzzer's empty one), so the
+    // target aborts at 0 edges and Mayhem reports "Run Failed". Register inside the fuzz entry point.
+    spdmlib::secret::measurement::register(SECRET_MEASUREMENT_IMPL_INSTANCE.clone());
+    spdmlib::secret::psk::register(SECRET_PSK_IMPL_INSTANCE.clone());
     // TCD:
     // - id: 0
     // - title: 'Fuzz SPDM handle measurement response'
@@ -323,7 +330,15 @@ async fn fuzz_send_receive_spdm_measurement(fuzzdata: Arc<Vec<u8>>) {
         #[cfg(feature = "hashed-transcript-data")]
         {
             let mut shared_secret = SpdmSharedSecretFinalKeyStruct::default();
-            shared_secret.data_size = SpdmDheAlgo::SECP_384_R1.get_key_size();
+            // get_key_size() is the DHE PUBLIC KEY size — for SECP_384_R1 that is 96 bytes (x‖y).
+            // This struct holds the ECDH SHARED SECRET, which is the x-coordinate alone: 48 bytes
+            // (SECP_384_R1_SHARED_SECRET_SIZE), and its backing buffer is sized
+            // SPDM_MAX_SHARED_SECRET_SIZE == 48. Setting data_size = 96 makes AsRef::as_ref slice
+            // &data[..96] over a 48-byte buffer, so the first call panics with "range end index 96
+            // out of range for slice of length 48" (spdmlib/src/protocol/algo.rs:1917) as soon as
+            // set_shared_secret -> derive_handshake_secret -> hkdf_extract runs. That aborts the
+            // harness on every input, including libFuzzer's empty one, leaving the target at 0 edges.
+            shared_secret.data_size = SECP_384_R1_SHARED_SECRET_SIZE as u16;
             requester.common.session[0]
                 .set_shared_secret(SpdmVersion::SpdmVersion12, shared_secret)
                 .unwrap();

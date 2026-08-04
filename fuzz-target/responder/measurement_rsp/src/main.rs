@@ -15,6 +15,15 @@ use alloc::sync::Arc;
 async fn fuzz_handle_spdm_measurement(data: Arc<Vec<u8>>) {
     spdmlib::secret::asym_sign::register(SECRET_ASYM_IMPL_INSTANCE.clone());
     spdmlib::secret::pqc_asym_sign::register(SECRET_PQC_ASYM_IMPL_INSTANCE.clone());
+    // The measurement + psk providers are registered ONLY in main() below, which is
+    // #[cfg(not(feature = "use_libfuzzer"))] — so under the libFuzzer build (use_libfuzzer is a
+    // default feature) main() is compiled out and these never run. Handling a MEASUREMENTS request
+    // then reaches spdmlib's UNIMPLETEMTED default measurement callback and hits `unimplemented!()`
+    // (spdmlib/src/secret/mod.rs:32) on the very first input, including libFuzzer's empty one — the
+    // target aborts before covering anything and Mayhem reports "Run Failed" at 0 edges. Register
+    // here, inside the fuzz entry point, the way every other harness does (cf. challenge_rsp).
+    spdmlib::secret::measurement::register(SECRET_MEASUREMENT_IMPL_INSTANCE.clone());
+    spdmlib::secret::psk::register(SECRET_PSK_IMPL_INSTANCE.clone());
     // TCD:
     // - id: 0
     // - title: 'Fuzz SPDM handle measurement request'
