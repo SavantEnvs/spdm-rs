@@ -1,0 +1,9 @@
+# seed-from: https://app.mayhem.security/savantenvs/spdm-rs/certificate-rsp
+project: savantenvs/spdm-rs
+target: certificate_rsp-mined-5c89fff
+testsuite:
+  - https://$MAYHEM_DOMAIN/$MAYHEM_PROJECT/$MAYHEM_TARGET/testsuite.tar
+  - file://mayhem/certificate_rsp-mined-5c89fff/testsuite
+cmds:
+  - cmd: /mayhem/certificate_rsp
+    libfuzzer: true
